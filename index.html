@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>今日健康紀錄與圖表</title>
+<!-- 📌 iPhone 桌面 App 圖示：它會去抓您上傳到 GitHub 的 custom-icon.png 照片 -->
+<link rel="apple-touch-icon" href="custom-icon.png">
+<link rel="icon" type="image/png" href="custom-icon.png">
 <!-- 引入 Chart.js 用於繪製血壓圖表 -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -28,7 +31,7 @@
     background: var(--bg);
     color: var(--ink);
     font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
-    touch-action: manipulation; /* 避免長輩不小心雙擊放大螢幕 */
+    touch-action: manipulation;
   }
   h1,h2{
     font-family: "Noto Sans TC", "PingFang TC", sans-serif;
@@ -244,7 +247,8 @@
     padding: 12px 8px;
     text-align: center;
   }
-  .data-table th {
+  .data-table th { background: var(--teal-light); color: var(--teal); }
+
   /* 列印隱藏元素 */
   @media print {
     body { background: #fff; color: #000; }
@@ -284,6 +288,20 @@
   .report-btn.active {
     background: var(--teal-light);
     color: var(--teal);
+  }
+
+  .print-btn {
+    width: 100%;
+    padding: 18px;
+    font-size: 24px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--teal);
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 10px rgba(26, 89, 90, 0.2);
   }
 
   /* Modal 樣式 */
@@ -360,7 +378,7 @@
       </div>
     </div>
 
-    <!-- 新增：晚上血壓區塊 -->
+    <!-- 晚上血壓區塊 -->
     <div class="card">
       <h2>🩺 晚上量血壓</h2>
       <div class="bp-block">
@@ -448,8 +466,8 @@
   const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
   
   let db, auth, userId;
-  let allHistoryData = []; // 儲存所有雲端拉取的資料
-  let reportMode = 'week'; // 預設顯示近一週 ('week' 或 'month')
+  let allHistoryData = []; 
+  let reportMode = 'week'; 
   let bpChartInstance = null; 
 
   window.state = {
@@ -477,10 +495,10 @@
         }
       } catch (err) {
         console.error("雲端連線失敗:", err);
-        loadMockData(); // 失敗時載入備用資料
+        loadMockData(); 
       }
     } else {
-      loadMockData(); // 無設定檔時載入備用資料
+      loadMockData(); 
     }
   }
 
@@ -491,10 +509,8 @@
       snapshot.forEach(doc => {
         allHistoryData.push(doc.data());
       });
-      // 依照日期由舊到新排序
       allHistoryData.sort((a, b) => a.dateId.localeCompare(b.dateId));
       
-      // 如果正處於圖表頁，立即刷新畫面
       if(document.getElementById('chartView').classList.contains('active')){
         renderChart();
         renderTable();
@@ -610,7 +626,6 @@
   };
 
   function getFilteredData() {
-    // 依據選擇的模式抓取最後 7 筆(週) 或 30 筆(月) 資料
     const count = reportMode === 'week' ? 7 : 30;
     return allHistoryData.slice(-count);
   }
@@ -672,7 +687,6 @@
     const tbody = document.getElementById('dataTableBody');
     tbody.innerHTML = '';
     
-    // 讓最新日期排在表格最上方
     const reversedData = [...displayData].reverse();
 
     if(reversedData.length === 0) {
@@ -685,6 +699,10 @@
       
       const tdDate = document.createElement('td');
       tdDate.textContent = row.date;
+      if (row.note) {
+        tdDate.title = `備忘：${row.note}`;
+        tdDate.innerHTML += '<br><small style="color:var(--coral);">📝有備忘</small>';
+      }
       
       const tdMorn = document.createElement('td');
       const mornSysColor = row.sys > 130 ? '#D14931' : 'inherit';
@@ -692,7 +710,6 @@
       tdMorn.innerHTML = `<span style="color:${mornSysColor}; font-weight:${mornSysWeight}">${row.sys}</span> / ${row.dia}`;
 
       const tdEve = document.createElement('td');
-      // 處理如果長輩只量早上沒量晚上的防呆(假設沒量的話數值會跟早上一樣或為0，這邊直接呈現數值)
       const eveSysColor = row.eveSys > 130 ? '#D14931' : 'inherit';
       const eveSysWeight = row.eveSys > 130 ? 'bold' : 'normal';
       tdEve.innerHTML = `<span style="color:${eveSysColor}; font-weight:${eveSysWeight}">${row.eveSys}</span> / ${row.eveDia}`;
@@ -713,20 +730,21 @@
     btn.textContent = "⏳ 雲端儲存中...";
     btn.disabled = true;
 
+    const noteText = document.getElementById('note').value.trim();
+
     const newRecord = {
-      dateId: getTodayId(), // 用 YYYY-MM-DD 當 ID 排序
-      date: getTodayString(), // 顯示用的 MM/DD
+      dateId: getTodayId(), 
+      date: getTodayString(), 
       sys: window.state.morningSys,
       dia: window.state.morningDia,
       eveSys: window.state.eveningSys,
       eveDia: window.state.eveningDia,
       med: window.state.morningMed,
-      note: document.getElementById('note').value.trim()
+      note: noteText 
     };
 
     if (userId && db) {
       try {
-        // 使用當天日期作為文件 ID，如果同一天重複送出會自動覆蓋更新
         const docRef = doc(db, 'artifacts', appId, 'users', userId, 'health_records', newRecord.dateId);
         await setDoc(docRef, newRecord);
         window.showModal();
@@ -735,7 +753,6 @@
         alert("儲存失敗，請確認網路連線");
       }
     } else {
-      // 若無雲端環境，維持本地測試運作
       const existingIndex = allHistoryData.findIndex(d => d.dateId === newRecord.dateId);
       if(existingIndex >= 0) allHistoryData[existingIndex] = newRecord;
       else allHistoryData.push(newRecord);
@@ -748,7 +765,6 @@
     btn.disabled = false;
   };
 
-  // 初始化程式
   window.onload = () => {
     window.setTodayDate();
     initApp();
