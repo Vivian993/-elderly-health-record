@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>今日健康紀錄與圖表</title>
+<!-- 引入 Chart.js 用於繪製血壓圖表 -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  :root{
+    --bg: #F4F7F4;
+    --card: #FFFFFF;
+    --ink: #1A2B2C;
+    --ink-soft: #5A706F;
+    --teal: #1A595A;
+    --teal-light: #E3F0E6;
+    --gold: #D49B25;
+    --coral: #D14931;
+    --line: #DCE3DF;
+    --radius: 24px;
+    --lavender: #6A5B9B;
+    --lavender-bg: #EAE6F5;
+    --btn-radius: 20px;
+  }
+  *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html,body{
+    margin:0; padding:0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+    touch-action: manipulation; /* 避免長輩不小心雙擊放大螢幕 */
+  }
+  h1,h2{
+    font-family: "Noto Sans TC", "PingFang TC", sans-serif;
+    font-weight: 700;
+    margin: 0;
+  }
+  
+  .wrap{
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 16px 16px 80px;
+  }
+  
+  /* 頂部超大頁籤切換 */
+  .tabs{
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .tab-btn{
+    flex: 1;
+    padding: 16px 8px;
+    font-size: 22px;
+    font-weight: 700;
+    border-radius: var(--btn-radius);
+    border: 2px solid var(--line);
+    background: var(--card);
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .tab-btn.active{
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(26, 89, 90, 0.2);
+  }
+
+  .view-section {
+    display: none;
+    animation: fadeIn 0.3s ease;
+  }
+  .view-section.active {
+    display: block;
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .header{
+    text-align: center;
+    margin-bottom: 24px;
+  }
+  .header .date{
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--teal);
+    letter-spacing: 2px;
+  }
+  .header .greet{
+    margin-top: 8px;
+    font-size: 20px;
+    color: var(--ink-soft);
+    font-weight: 500;
+  }
+
+  .card{
+    background: var(--card);
+    border-radius: var(--radius);
+    padding: 24px 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 12px rgba(26, 89, 90, 0.06);
+    border: 2px solid var(--line);
+  }
+  .card h2{
+    font-size: 26px;
+    color: var(--teal);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 2px dashed var(--line);
+    padding-bottom: 12px;
+  }
+
+  /* 寬大吃藥按鈕 */
+  .med-btn-wide{
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 20px;
+    border-radius: var(--btn-radius);
+    border: 3px solid var(--gold);
+    background: #FFFAF0;
+    color: var(--gold);
+    font-size: 24px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .med-btn-wide:active{ transform: scale(0.97); }
+  .med-btn-wide.done{
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
+  }
+
+  .bp-block{
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .bp-item{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #F9FAF9;
+    padding: 16px;
+    border-radius: 20px;
+  }
+  .bp-item .label{
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--ink);
+    margin-bottom: 12px;
+  }
+  
+  .stepper{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    width: 100%;
+  }
+  .stepper button{
+    width: 70px;
+    height: 70px;
+    border-radius: 20px;
+    border: none;
+    background: var(--teal-light);
+    color: var(--teal);
+    font-size: 40px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 0 var(--line);
+  }
+  .stepper button:active{ 
+    transform: translateY(4px);
+    box-shadow: 0 0 0 var(--line);
+    background: #D0E3D3;
+  }
+  .stepper .value{
+    width: 110px;
+    font-size: 52px;
+    font-weight: 700;
+    text-align: center;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  textarea{
+    width: 100%;
+    min-height: 120px;
+    font-size: 22px;
+    font-family: inherit;
+    padding: 16px;
+    border-radius: 20px;
+    border: 2px solid var(--line);
+    resize: vertical;
+    color: var(--ink);
+  }
+  
+  .submit-btn{
+    width: 100%;
+    padding: 24px;
+    font-size: 28px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--coral);
+    border: none;
+    border-radius: 24px;
+    cursor: pointer;
+    letter-spacing: 2px;
+    box-shadow: 0 6px 0 #A83621;
+    margin-top: 10px;
+  }
+  .submit-btn:active{ 
+    transform: translateY(6px);
+    box-shadow: 0 0 0 #A83621;
+  }
+
+  .chart-container {
+    position: relative;
+    height: 300px;
+    width: 100%;
+    margin-bottom: 20px;
+  }
+
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 20px;
+  }
+  .data-table th, .data-table td {
+    border: 1px solid var(--line);
+    padding: 12px 8px;
+    text-align: center;
+  }
+  .data-table th {
+    background: var(--teal-light);
+    color: var(--teal);
+    font-weight: 700;
+  }
+
+  .print-btn {
+    width: 100%;
+    padding: 20px;
+    font-size: 24px;
+    font-weight: 700;
+    color: #fff;
+    background: var(--teal);
+    border: none;
+    border-radius: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    box-shadow: 0 6px 0 #124041;
+    margin-bottom: 20px;
+  }
+  .print-btn:active {
+    transform: translateY(6px);
+    box-shadow: 0 0 0 #124041;
+  }
+
+  /* 列印專用樣式 (@media print) */
+  @media print {
+    body { background: #fff; color: #000; }
+    .no-print { display: none !important; }
+    .wrap { padding: 0; max-width: 100%; }
+    .card { box-shadow: none; border: 1px solid #ccc; margin-bottom: 15px; page-break-inside: avoid; }
+    .print-header { display: block !important; text-align: center; margin-bottom: 20px; }
+    .print-header h1 { font-size: 32px; color: #000; }
+    .chart-container { height: 400px; }
+  }
+
+  /* 隱藏預設不列印的標題 */
+  .print-header { display: none; }
+
+  /* Modal 樣式 */
+  .modal-overlay{
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(26, 43, 44, 0.85);
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity 0.3s ease; z-index: 1000; padding: 20px;
+  }
+  .modal-overlay.show{ opacity: 1; pointer-events: auto; }
+  .modal-content{
+    background: #fff; padding: 40px 30px; border-radius: 32px; text-align: center;
+    max-width: 400px; width: 100%; transform: translateY(20px); transition: transform 0.4s;
+  }
+  .modal-overlay.show .modal-content{ transform: translateY(0); }
+  .modal-icon{ font-size: 80px; margin-bottom: 20px; display: inline-block; }
+  .modal-title{ font-size: 32px; font-weight: 700; color: var(--teal); margin-bottom: 12px; }
+  .modal-text{ font-size: 22px; color: var(--ink-soft); margin-bottom: 30px; }
+  .modal-btn{
+    width: 100%; padding: 20px; font-size: 24px; font-weight: 700;
+    color: #fff; background: var(--teal); border: none; border-radius: 20px; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  
+  <!-- 列印時才顯示的標題 -->
+  <div class="print-header">
+    <h1>個人健康紀錄表</h1>
+    <p id="printDateRange"></p>
+  </div>
+
+  <div class="tabs no-print">
+    <button class="tab-btn active" onclick="switchTab('record')">✍️ 寫紀錄</button>
+    <button class="tab-btn" onclick="switchTab('chart')">📊 看圖表</button>
+  </div>
+
+  <!-- 視圖區：填寫紀錄 -->
+  <div id="recordView" class="view-section active no-print">
+    <div class="header">
+      <div class="date" id="todayDate">-- 月 -- 日</div>
+      <div class="greet">早安，今天也要照顧好自己 💛</div>
+    </div>
+
+    <div class="card">
+      <h2>🌅 早上吃藥</h2>
+      <button class="med-btn-wide" id="morningMedBtn" onclick="toggleMed('morning')">
+        <span id="morningMedIcon">💊</span>
+        <span id="morningMedText">還沒吃，點這裡紀錄</span>
+      </button>
+    </div>
+
+    <div class="card">
+      <h2>🩺 早上量血壓</h2>
+      <div class="bp-block">
+        <div class="bp-item">
+          <div class="label">高壓 <span style="font-size:18px; color:var(--ink-soft)">(收縮壓)</span></div>
+          <div class="stepper">
+            <button onmousedown="startStep('morningSys',-1)" ontouchstart="startStep('morningSys',-1, event)">－</button>
+            <div class="value" id="morningSys">120</div>
+            <button onmousedown="startStep('morningSys',1)" ontouchstart="startStep('morningSys',1, event)">＋</button>
+          </div>
+        </div>
+        <div class="bp-item">
+          <div class="label">低壓 <span style="font-size:18px; color:var(--ink-soft)">(舒張壓)</span></div>
+          <div class="stepper">
+            <button onmousedown="startStep('morningDia',-1)" ontouchstart="startStep('morningDia',-1, event)">－</button>
+            <div class="value" id="morningDia">80</div>
+            <button onmousedown="startStep('morningDia',1)" ontouchstart="startStep('morningDia',1, event)">＋</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 新增：晚上血壓區塊 -->
+    <div class="card">
+      <h2>🩺 晚上量血壓</h2>
+      <div class="bp-block">
+        <div class="bp-item">
+          <div class="label">高壓 <span style="font-size:18px; color:var(--ink-soft)">(收縮壓)</span></div>
+          <div class="stepper">
+            <button onmousedown="startStep('eveningSys',-1)" ontouchstart="startStep('eveningSys',-1, event)">－</button>
+            <div class="value" id="eveningSys">120</div>
+            <button onmousedown="startStep('eveningSys',1)" ontouchstart="startStep('eveningSys',1, event)">＋</button>
+          </div>
+        </div>
+        <div class="bp-item">
+          <div class="label">低壓 <span style="font-size:18px; color:var(--ink-soft)">(舒張壓)</span></div>
+          <div class="stepper">
+            <button onmousedown="startStep('eveningDia',-1)" ontouchstart="startStep('eveningDia',-1, event)">－</button>
+            <div class="value" id="eveningDia">80</div>
+            <button onmousedown="startStep('eveningDia',1)" ontouchstart="startStep('eveningDia',1, event)">＋</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📝 今天想跟醫生說什麼？</h2>
+      <textarea id="note" placeholder="例如：這兩天有點頭暈、睡不太好⋯ (沒有可空白)"></textarea>
+    </div>
+
+    <button class="submit-btn" onclick="submitRecord()">📤 送出今天的紀錄</button>
+  </div>
+
+  <div id="chartView" class="view-section">
+    
+    <button class="print-btn no-print" onclick="window.print()">
+      🖨️ 列印此頁給醫生看
+    </button>
+
+    <div class="card">
+      <h2>📈 近期血壓趨勢</h2>
+      <div class="chart-container">
+        <canvas id="bpChart"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>📋 每日詳細數據</h2>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>日期</th>
+            <th>早上(高/低)</th>
+            <th>晚上(高/低)</th>
+            <th>吃藥</th>
+          </tr>
+        </thead>
+        <tbody id="dataTableBody">
+          <!-- 數據將由 JS 動態生成 -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- 成功提示彈窗 -->
+<div class="modal-overlay" id="successModal">
+  <div class="modal-content">
+    <div class="modal-icon">🎉</div>
+    <div class="modal-title">紀錄成功！</div>
+    <div class="modal-text">資料已儲存並更新至圖表，請繼續保持健康喔！</div>
+    <button class="modal-btn" onclick="closeModal()">去看看圖表</button>
+  </div>
+</div>
+
+<script>
+  const state = {
+    morningMed: false, morningMedTime: null,
+    morningSys: 120, morningDia: 80,
+    eveningSys: 120, eveningDia: 80,
+  };
+
+  // 模擬歷史數據 (加入 evening 數據)
+  let historyData = [
+    { date: '09/01', sys: 128, dia: 82, eveSys: 125, eveDia: 80, med: true, note: '' },
+    { date: '09/02', sys: 135, dia: 86, eveSys: 130, eveDia: 82, med: true, note: '有點累' },
+    { date: '09/03', sys: 122, dia: 78, eveSys: 120, eveDia: 76, med: true, note: '' },
+    { date: '09/04', sys: 130, dia: 84, eveSys: 128, eveDia: 82, med: false, note: '忘記吃藥' },
+    { date: '09/05', sys: 118, dia: 76, eveSys: 115, eveDia: 74, med: true, note: '' },
+    { date: '09/06', sys: 125, dia: 80, eveSys: 122, eveDia: 78, med: true, note: '' }
+  ];
+
+  let bpChartInstance = null; // 存放 Chart.js 實例
+
+  function pad(n){ return n.toString().padStart(2,'0'); }
+
+  function getTodayString() {
+    const d = new Date();
+    return `${pad(d.getMonth()+1)}/${pad(d.getDate())}`;
+  }
+
+  function setTodayDate(){
+    const d = new Date();
+    const days = ['日','一','二','三','四','五','六'];
+    document.getElementById('todayDate').textContent =
+      `${d.getMonth()+1} 月 ${d.getDate()} 日 (${days[d.getDay()]})`;
+    
+    document.getElementById('printDateRange').textContent = 
+      `列印日期：${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+  }
+  setTodayDate();
+
+  function switchTab(tabName) {
+    // 更新按鈕樣式
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.tab-btn[onclick="switchTab('${tabName}')"]`).classList.add('active');
+    
+    // 更新顯示區塊
+    document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
+    document.getElementById(`${tabName}View`).classList.add('active');
+
+    // 如果切換到圖表頁，重新渲染一次圖表確保自適應尺寸正確
+    if (tabName === 'chart') {
+      renderChart();
+      renderTable();
+    }
+  }
+
+  function toggleMed(period){
+    const key = period + 'Med';
+    state[key] = !state[key];
+    
+    const btn = document.getElementById(period + 'MedBtn');
+    const icon = document.getElementById(period + 'MedIcon');
+    const text = document.getElementById(period + 'MedText');
+    
+    if(state[key]){
+      const now = new Date();
+      const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+      state[key + 'Time'] = timeStr;
+      
+      btn.classList.add('done');
+      icon.textContent = '✅';
+      text.textContent = `已在 ${timeStr} 吃藥`;
+    } else {
+      state[key + 'Time'] = null;
+      btn.classList.remove('done');
+      icon.textContent = '💊';
+      text.textContent = '還沒吃，點這裡紀錄';
+    }
+  }
+
+  let stepInterval, stepTimeout;
+  function updateValue(id, delta) {
+    state[id] = Math.max(40, Math.min(260, state[id] + delta));
+    document.getElementById(id).textContent = state[id];
+  }
+
+  function startStep(id, delta, event) {
+    if(event) event.preventDefault();
+    updateValue(id, delta);
+    stepTimeout = setTimeout(() => {
+      stepInterval = setInterval(() => updateValue(id, delta), 100);
+    }, 400);
+  }
+
+  function stopStep() {
+    clearTimeout(stepTimeout);
+    clearInterval(stepInterval);
+  }
+  document.addEventListener('mouseup', stopStep);
+  document.addEventListener('touchend', stopStep);
+
+  function renderChart() {
+    const ctx = document.getElementById('bpChart').getContext('2d');
+    
+    const labels = historyData.map(d => d.date);
+    const sysData = historyData.map(d => d.sys);
+    const diaData = historyData.map(d => d.dia);
+    const eveSysData = historyData.map(d => d.eveSys);
+    const eveDiaData = historyData.map(d => d.eveDia);
+
+    if (bpChartInstance) {
+      bpChartInstance.destroy(); // 銷毀舊圖表以重新繪製
+    }
+
+    // Chart.js 全局字體設定，讓長輩容易看
+    Chart.defaults.font.size = 18;
+    Chart.defaults.font.family = '"Noto Sans TC", sans-serif';
+
+    bpChartInstance = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: '早高壓',
+            data: sysData,
+            borderColor: '#D14931', /* Coral */
+            backgroundColor: 'rgba(209, 73, 49, 0.1)',
+            borderWidth: 3,
+            pointRadius: 5,
+            pointBackgroundColor: '#D14931',
+            tension: 0.3,
+            fill: true
+          },
+          {
+            label: '晚高壓',
+            data: eveSysData,
+            borderColor: '#D14931',
+            borderDash: [6, 6], /* 虛線區分晚上 */
+            backgroundColor: 'transparent',
+            borderWidth: 3,
+            pointRadius: 5,
+            pointBackgroundColor: '#fff',
+            pointBorderColor: '#D14931',
+            pointBorderWidth: 2,
+            tension: 0.3
+          },
+          {
+            label: '早低壓',
+            data: diaData,
+            borderColor: '#1A595A', /* Teal */
+            backgroundColor: 'transparent',
+            borderWidth: 3,
+            pointRadius: 5,
+            pointBackgroundColor: '#1A595A',
+            tension: 0.3
+          },
+          {
+            label: '晚低壓',
+            data: eveDiaData,
+            borderColor: '#1A595A',
+            borderDash: [6, 6], /* 虛線區分晚上 */
+            backgroundColor: 'transparent',
+            borderWidth: 3,
+            pointRadius: 5,
+            pointBackgroundColor: '#fff',
+            pointBorderColor: '#1A595A',
+            pointBorderWidth: 2,
+            tension: 0.3
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { padding: 15, usePointStyle: true } }
+        },
+        scales: {
+          y: {
+            min: 50, max: 200,
+            ticks: { stepSize: 30 }
+          },
+          x: {
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  }
+
+  function renderTable() {
+    const tbody = document.getElementById('dataTableBody');
+    tbody.innerHTML = '';
+    
+    // 反轉陣列，讓最新日期排在表格最上方
+    const reversedData = [...historyData].reverse();
+
+    reversedData.forEach(row => {
+      const tr = document.createElement('tr');
+      
+      const tdDate = document.createElement('td');
+      tdDate.textContent = row.date;
+      
+      // 早上血壓 (超過 130 變紅)
+      const tdMorn = document.createElement('td');
+      const mornSysColor = row.sys > 130 ? '#D14931' : 'inherit';
+      const mornSysWeight = row.sys > 130 ? 'bold' : 'normal';
+      tdMorn.innerHTML = `<span style="color:${mornSysColor}; font-weight:${mornSysWeight}">${row.sys}</span> / ${row.dia}`;
+
+      // 晚上血壓 (超過 130 變紅)
+      const tdEve = document.createElement('td');
+      const eveSysColor = row.eveSys > 130 ? '#D14931' : 'inherit';
+      const eveSysWeight = row.eveSys > 130 ? 'bold' : 'normal';
+      tdEve.innerHTML = `<span style="color:${eveSysColor}; font-weight:${eveSysWeight}">${row.eveSys}</span> / ${row.eveDia}`;
+
+      const tdMed = document.createElement('td');
+      tdMed.textContent = row.med ? '✅' : '❌';
+
+      tr.appendChild(tdDate);
+      tr.appendChild(tdMorn);
+      tr.appendChild(tdEve);
+      tr.appendChild(tdMed);
+      tbody.appendChild(tr);
+    });
+  }
+
+  function showModal() {
+    document.getElementById('successModal').classList.add('show');
+  }
+
+  function closeModal() {
+    document.getElementById('successModal').classList.remove('show');
+    switchTab('chart'); // 關閉提示後自動跳轉到圖表頁看成果
+  }
+
+  function submitRecord() {
+    const btn = document.querySelector('.submit-btn');
+    btn.textContent = "⏳ 紀錄中...";
+    btn.disabled = true;
+
+    // 取得今日紀錄
+    const newRecord = {
+      date: getTodayString(),
+      sys: state.morningSys,
+      dia: state.morningDia,
+      eveSys: state.eveningSys,
+      eveDia: state.eveningDia,
+      med: state.morningMed,
+      note: document.getElementById('note').value.trim()
+    };
+
+    // 檢查今天是否已經紀錄過，有則覆蓋，無則新增
+    const existingIndex = historyData.findIndex(d => d.date === newRecord.date);
+    if(existingIndex >= 0) {
+      historyData[existingIndex] = newRecord;
+    } else {
+      historyData.push(newRecord);
+      // 保持最多顯示 7 天數據，避免圖表太擠
+      if (historyData.length > 7) historyData.shift(); 
+    }
+
+    // 模擬網路延遲
+    setTimeout(() => {
+      showModal();
+      btn.textContent = "📤 送出今天的紀錄";
+      btn.disabled = false;
+    }, 600);
+  }
+
+  // 初始化時先渲染一次圖表（為了列印預備）
+  window.onload = () => {
+    renderChart();
+    renderTable();
+  };
+
+  /* 
+   溫馨提示：
+   目前的數據是儲存在「網頁記憶體」中，重新整理網頁會恢復預設的模擬資料，
+   這是為了讓您方便測試與觀看圖表效果。
+   若未來需要「永久保存數據」，我們可以為您加入雲端儲存 (Cloud Storage) 功能！
+  */
+</script>
+</body>
+</html>
