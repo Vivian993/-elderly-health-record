@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>今日健康紀錄與圖表</title>
-<!-- 📌 iPhone 桌面 App 圖示：它會去抓您上傳到 GitHub 的 custom-icon.png 照片 -->
+<!-- 📌 iPhone 桌面 App 圖示 -->
 <link rel="apple-touch-icon" href="custom-icon.png">
 <link rel="icon" type="image/png" href="custom-icon.png">
 <!-- 引入 Chart.js 用於繪製血壓圖表 -->
@@ -240,12 +240,13 @@
     width: 100%;
     border-collapse: collapse;
     margin-top: 10px;
-    font-size: 20px;
+    font-size: 18px;
   }
   .data-table th, .data-table td {
     border: 1px solid var(--line);
     padding: 12px 8px;
     text-align: center;
+    vertical-align: middle;
   }
   .data-table th { background: var(--teal-light); color: var(--teal); }
 
@@ -260,7 +261,6 @@
     .chart-container { height: 400px; }
   }
 
-  /* 隱藏預設不列印的標題 */
   .print-header { display: none; }
 
   /* 報表切換按鈕 */
@@ -435,7 +435,7 @@
             <th>日期</th>
             <th>早上(高/低)</th>
             <th>晚上(高/低)</th>
-            <th>吃藥</th>
+            <th>吃藥 / 備忘</th>
           </tr>
         </thead>
         <tbody id="dataTableBody">
@@ -522,9 +522,9 @@
 
   function loadMockData() {
     allHistoryData = [
-      { dateId: '2026-09-01', date: '09/01', sys: 128, dia: 82, eveSys: 125, eveDia: 80, med: true, note: '' },
-      { dateId: '2026-09-02', date: '09/02', sys: 135, dia: 86, eveSys: 130, eveDia: 82, med: true, note: '有點累' },
-      { dateId: '2026-09-03', date: '09/03', sys: 122, dia: 78, eveSys: 120, eveDia: 76, med: true, note: '' },
+      { dateId: '2026-09-01', date: '09/01', sys: 128, dia: 82, eveSys: 125, eveDia: 80, med: true, medTime: '08:15', note: '' },
+      { dateId: '2026-09-02', date: '09/02', sys: 135, dia: 86, eveSys: 130, eveDia: 82, med: true, medTime: '08:30', note: '有點累' },
+      { dateId: '2026-09-03', date: '09/03', sys: 122, dia: 78, eveSys: 120, eveDia: 76, med: true, medTime: '08:05', note: '' },
     ];
     if(document.getElementById('chartView').classList.contains('active')){
       renderChart();
@@ -589,7 +589,7 @@
       
       btn.classList.add('done');
       icon.textContent = '✅';
-      text.textContent = `已在 ${timeStr} 吃藥`;
+      text.textContent = `已於 ${timeStr} 吃藥`;
     } else {
       window.state[key + 'Time'] = null;
       btn.classList.remove('done');
@@ -699,10 +699,6 @@
       
       const tdDate = document.createElement('td');
       tdDate.textContent = row.date;
-      if (row.note) {
-        tdDate.title = `備忘：${row.note}`;
-        tdDate.innerHTML += '<br><small style="color:var(--coral);">📝有備忘</small>';
-      }
       
       const tdMorn = document.createElement('td');
       const mornSysColor = row.sys > 130 ? '#D14931' : 'inherit';
@@ -714,13 +710,23 @@
       const eveSysWeight = row.eveSys > 130 ? 'bold' : 'normal';
       tdEve.innerHTML = `<span style="color:${eveSysColor}; font-weight:${eveSysWeight}">${row.eveSys}</span> / ${row.eveDia}`;
 
-      const tdMed = document.createElement('td');
-      tdMed.textContent = row.med ? '✅' : '❌';
+      const tdInfo = document.createElement('td');
+      let infoHtml = '';
+      if(row.med) {
+        const timeDisplay = row.medTime ? ` (${row.medTime})` : '';
+        infoHtml += `<div>✅ 已吃藥<span style="color: #888888; font-size: 14px; margin-left: 4px;">${timeDisplay}</span></div>`;
+      } else {
+        infoHtml += `<div>❌ 未吃藥</div>`;
+      }
+      if(row.note && row.note.trim() !== '') {
+        infoHtml += `<div style="margin-top: 4px; color: var(--coral); font-size: 15px; font-weight: 500;">📝 備忘：${row.note}</div>`;
+      }
+      tdInfo.innerHTML = infoHtml;
 
       tr.appendChild(tdDate);
       tr.appendChild(tdMorn);
       tr.appendChild(tdEve);
-      tr.appendChild(tdMed);
+      tr.appendChild(tdInfo);
       tbody.appendChild(tr);
     });
   }
@@ -740,6 +746,7 @@
       eveSys: window.state.eveningSys,
       eveDia: window.state.eveningDia,
       med: window.state.morningMed,
+      medTime: window.state.morningMedTime,
       note: noteText 
     };
 
