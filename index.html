@@ -4,9 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
 <title>今日健康紀錄與圖表</title>
-<!-- 📌 iPhone 桌面 App 圖示：它會去抓您上傳到 GitHub 的 custom-icon.png 照片 -->
-<link rel="apple-touch-icon" href="custom-icon.png">
-<link rel="icon" type="image/png" href="custom-icon.png"> 
 <!-- 引入 Chart.js 用於繪製血壓圖表 -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
@@ -248,34 +245,7 @@
     text-align: center;
   }
   .data-table th {
-    background: var(--teal-light);
-    color: var(--teal);
-    font-weight: 700;
-  }
-
-  .print-btn {
-    width: 100%;
-    padding: 20px;
-    font-size: 24px;
-    font-weight: 700;
-    color: #fff;
-    background: var(--teal);
-    border: none;
-    border-radius: 20px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    box-shadow: 0 6px 0 #124041;
-    margin-bottom: 20px;
-  }
-  .print-btn:active {
-    transform: translateY(6px);
-    box-shadow: 0 0 0 #124041;
-  }
-
-  /* 列印專用樣式 (@media print) */
+  /* 列印隱藏元素 */
   @media print {
     body { background: #fff; color: #000; }
     .no-print { display: none !important; }
@@ -288,6 +258,33 @@
 
   /* 隱藏預設不列印的標題 */
   .print-header { display: none; }
+
+  /* 報表切換按鈕 */
+  .report-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    background: #fff;
+    padding: 6px;
+    border-radius: 16px;
+    border: 2px solid var(--line);
+  }
+  .report-btn {
+    flex: 1;
+    padding: 12px;
+    font-size: 20px;
+    font-weight: 700;
+    border: none;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .report-btn.active {
+    background: var(--teal-light);
+    color: var(--teal);
+  }
 
   /* Modal 樣式 */
   .modal-overlay{
@@ -400,6 +397,11 @@
       🖨️ 列印此頁給醫生看
     </button>
 
+    <div class="report-tabs no-print">
+      <button class="report-btn active" onclick="setReportMode('week')">📅 近一週報表</button>
+      <button class="report-btn" onclick="setReportMode('month')">🗓️ 近一個月報表</button>
+    </div>
+
     <div class="card">
       <h2>📈 近期血壓趨勢</h2>
       <div class="chart-container">
@@ -432,29 +434,87 @@
   <div class="modal-content">
     <div class="modal-icon">🎉</div>
     <div class="modal-title">紀錄成功！</div>
-    <div class="modal-text">資料已儲存並更新至圖表，請繼續保持健康喔！</div>
+    <div class="modal-text">資料已安全儲存至雲端並更新至圖表，請繼續保持健康喔！</div>
     <button class="modal-btn" onclick="closeModal()">去看看圖表</button>
   </div>
 </div>
 
-<script>
-  const state = {
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+  import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+  import { getFirestore, doc, setDoc, collection, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+  const appId = typeof __app_id !== 'undefined' ? __app_id : 'elderly-health-app';
+  const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+  
+  let db, auth, userId;
+  let allHistoryData = []; // 儲存所有雲端拉取的資料
+  let reportMode = 'week'; // 預設顯示近一週 ('week' 或 'month')
+  let bpChartInstance = null; 
+
+  window.state = {
     morningMed: false, morningMedTime: null,
     morningSys: 120, morningDia: 80,
     eveningSys: 120, eveningDia: 80,
   };
 
-  // 模擬歷史數據 (加入 evening 數據)
-  let historyData = [
-    { date: '09/01', sys: 128, dia: 82, eveSys: 125, eveDia: 80, med: true, note: '' },
-    { date: '09/02', sys: 135, dia: 86, eveSys: 130, eveDia: 82, med: true, note: '有點累' },
-    { date: '09/03', sys: 122, dia: 78, eveSys: 120, eveDia: 76, med: true, note: '' },
-    { date: '09/04', sys: 130, dia: 84, eveSys: 128, eveDia: 82, med: false, note: '忘記吃藥' },
-    { date: '09/05', sys: 118, dia: 76, eveSys: 115, eveDia: 74, med: true, note: '' },
-    { date: '09/06', sys: 125, dia: 80, eveSys: 122, eveDia: 78, med: true, note: '' }
-  ];
+  async function initApp() {
+    if (firebaseConfig) {
+      try {
+        const app = initializeApp(firebaseConfig);
+        db = getFirestore(app);
+        auth = getAuth(app);
 
-  let bpChartInstance = null; // 存放 Chart.js 實例
+        if (typeof __initial_auth_token !== 'undefined') {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+        userId = auth.currentUser?.uid;
+
+        if (userId) {
+          loadCloudData();
+        }
+      } catch (err) {
+        console.error("雲端連線失敗:", err);
+        loadMockData(); // 失敗時載入備用資料
+      }
+    } else {
+      loadMockData(); // 無設定檔時載入備用資料
+    }
+  }
+
+  function loadCloudData() {
+    const recordsRef = collection(db, 'artifacts', appId, 'users', userId, 'health_records');
+    onSnapshot(recordsRef, (snapshot) => {
+      allHistoryData = [];
+      snapshot.forEach(doc => {
+        allHistoryData.push(doc.data());
+      });
+      // 依照日期由舊到新排序
+      allHistoryData.sort((a, b) => a.dateId.localeCompare(b.dateId));
+      
+      // 如果正處於圖表頁，立即刷新畫面
+      if(document.getElementById('chartView').classList.contains('active')){
+        renderChart();
+        renderTable();
+      }
+    }, (error) => {
+      console.error("讀取資料發生錯誤:", error);
+    });
+  }
+
+  function loadMockData() {
+    allHistoryData = [
+      { dateId: '2026-09-01', date: '09/01', sys: 128, dia: 82, eveSys: 125, eveDia: 80, med: true, note: '' },
+      { dateId: '2026-09-02', date: '09/02', sys: 135, dia: 86, eveSys: 130, eveDia: 82, med: true, note: '有點累' },
+      { dateId: '2026-09-03', date: '09/03', sys: 122, dia: 78, eveSys: 120, eveDia: 76, med: true, note: '' },
+    ];
+    if(document.getElementById('chartView').classList.contains('active')){
+      renderChart();
+      renderTable();
+    }
+  }
 
   function pad(n){ return n.toString().padStart(2,'0'); }
 
@@ -463,92 +523,110 @@
     return `${pad(d.getMonth()+1)}/${pad(d.getDate())}`;
   }
 
-  function setTodayDate(){
+  function getTodayId() {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  }
+
+  window.setTodayDate = function(){
     const d = new Date();
     const days = ['日','一','二','三','四','五','六'];
     document.getElementById('todayDate').textContent =
       `${d.getMonth()+1} 月 ${d.getDate()} 日 (${days[d.getDay()]})`;
-    
     document.getElementById('printDateRange').textContent = 
       `列印日期：${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
-  }
-  setTodayDate();
+  };
 
-  function switchTab(tabName) {
-    // 更新按鈕樣式
+  window.switchTab = function(tabName) {
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     document.querySelector(`.tab-btn[onclick="switchTab('${tabName}')"]`).classList.add('active');
     
-    // 更新顯示區塊
     document.querySelectorAll('.view-section').forEach(sec => sec.classList.remove('active'));
     document.getElementById(`${tabName}View`).classList.add('active');
 
-    // 如果切換到圖表頁，重新渲染一次圖表確保自適應尺寸正確
     if (tabName === 'chart') {
       renderChart();
       renderTable();
     }
-  }
+  };
 
-  function toggleMed(period){
+  window.setReportMode = function(mode) {
+    reportMode = mode;
+    document.querySelectorAll('.report-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelector(`.report-btn[onclick="setReportMode('${mode}')"]`).classList.add('active');
+    renderChart();
+    renderTable();
+  };
+
+  window.toggleMed = function(period){
     const key = period + 'Med';
-    state[key] = !state[key];
+    window.state[key] = !window.state[key];
     
     const btn = document.getElementById(period + 'MedBtn');
     const icon = document.getElementById(period + 'MedIcon');
     const text = document.getElementById(period + 'MedText');
     
-    if(state[key]){
+    if(window.state[key]){
       const now = new Date();
       const timeStr = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
-      state[key + 'Time'] = timeStr;
+      window.state[key + 'Time'] = timeStr;
       
       btn.classList.add('done');
       icon.textContent = '✅';
       text.textContent = `已在 ${timeStr} 吃藥`;
     } else {
-      state[key + 'Time'] = null;
+      window.state[key + 'Time'] = null;
       btn.classList.remove('done');
       icon.textContent = '💊';
       text.textContent = '還沒吃，點這裡紀錄';
     }
-  }
+  };
 
   let stepInterval, stepTimeout;
-  function updateValue(id, delta) {
-    state[id] = Math.max(40, Math.min(260, state[id] + delta));
-    document.getElementById(id).textContent = state[id];
-  }
+  window.updateValue = function(id, delta) {
+    window.state[id] = Math.max(40, Math.min(260, window.state[id] + delta));
+    document.getElementById(id).textContent = window.state[id];
+  };
 
-  function startStep(id, delta, event) {
+  window.startStep = function(id, delta, event) {
     if(event) event.preventDefault();
-    updateValue(id, delta);
+    window.updateValue(id, delta);
     stepTimeout = setTimeout(() => {
-      stepInterval = setInterval(() => updateValue(id, delta), 100);
+      stepInterval = setInterval(() => window.updateValue(id, delta), 100);
     }, 400);
-  }
+  };
 
-  function stopStep() {
+  window.stopStep = function() {
     clearTimeout(stepTimeout);
     clearInterval(stepInterval);
+  };
+  document.addEventListener('mouseup', window.stopStep);
+  document.addEventListener('touchend', window.stopStep);
+
+  window.showModal = function() { document.getElementById('successModal').classList.add('show'); };
+  window.closeModal = function() {
+    document.getElementById('successModal').classList.remove('show');
+    window.switchTab('chart');
+  };
+
+  function getFilteredData() {
+    // 依據選擇的模式抓取最後 7 筆(週) 或 30 筆(月) 資料
+    const count = reportMode === 'week' ? 7 : 30;
+    return allHistoryData.slice(-count);
   }
-  document.addEventListener('mouseup', stopStep);
-  document.addEventListener('touchend', stopStep);
 
   function renderChart() {
+    const displayData = getFilteredData();
     const ctx = document.getElementById('bpChart').getContext('2d');
     
-    const labels = historyData.map(d => d.date);
-    const sysData = historyData.map(d => d.sys);
-    const diaData = historyData.map(d => d.dia);
-    const eveSysData = historyData.map(d => d.eveSys);
-    const eveDiaData = historyData.map(d => d.eveDia);
+    const labels = displayData.map(d => d.date);
+    const sysData = displayData.map(d => d.sys);
+    const diaData = displayData.map(d => d.dia);
+    const eveSysData = displayData.map(d => d.eveSys);
+    const eveDiaData = displayData.map(d => d.eveDia);
 
-    if (bpChartInstance) {
-      bpChartInstance.destroy(); // 銷毀舊圖表以重新繪製
-    }
+    if (bpChartInstance) bpChartInstance.destroy();
 
-    // Chart.js 全局字體設定，讓長輩容易看
     Chart.defaults.font.size = 18;
     Chart.defaults.font.family = '"Noto Sans TC", sans-serif';
 
@@ -558,79 +636,49 @@
         labels: labels,
         datasets: [
           {
-            label: '早高壓',
-            data: sysData,
-            borderColor: '#D14931', /* Coral */
-            backgroundColor: 'rgba(209, 73, 49, 0.1)',
-            borderWidth: 3,
-            pointRadius: 5,
-            pointBackgroundColor: '#D14931',
-            tension: 0.3,
-            fill: true
+            label: '早高壓', data: sysData, borderColor: '#D14931',
+            backgroundColor: 'rgba(209, 73, 49, 0.1)', borderWidth: 3,
+            pointRadius: 5, pointBackgroundColor: '#D14931', tension: 0.3, fill: true
           },
           {
-            label: '晚高壓',
-            data: eveSysData,
-            borderColor: '#D14931',
-            borderDash: [6, 6], /* 虛線區分晚上 */
-            backgroundColor: 'transparent',
-            borderWidth: 3,
-            pointRadius: 5,
-            pointBackgroundColor: '#fff',
-            pointBorderColor: '#D14931',
-            pointBorderWidth: 2,
-            tension: 0.3
+            label: '晚高壓', data: eveSysData, borderColor: '#D14931',
+            borderDash: [6, 6], backgroundColor: 'transparent', borderWidth: 3,
+            pointRadius: 5, pointBackgroundColor: '#fff', pointBorderColor: '#D14931',
+            pointBorderWidth: 2, tension: 0.3
           },
           {
-            label: '早低壓',
-            data: diaData,
-            borderColor: '#1A595A', /* Teal */
-            backgroundColor: 'transparent',
-            borderWidth: 3,
-            pointRadius: 5,
-            pointBackgroundColor: '#1A595A',
-            tension: 0.3
+            label: '早低壓', data: diaData, borderColor: '#1A595A',
+            backgroundColor: 'transparent', borderWidth: 3,
+            pointRadius: 5, pointBackgroundColor: '#1A595A', tension: 0.3
           },
           {
-            label: '晚低壓',
-            data: eveDiaData,
-            borderColor: '#1A595A',
-            borderDash: [6, 6], /* 虛線區分晚上 */
-            backgroundColor: 'transparent',
-            borderWidth: 3,
-            pointRadius: 5,
-            pointBackgroundColor: '#fff',
-            pointBorderColor: '#1A595A',
-            pointBorderWidth: 2,
-            tension: 0.3
+            label: '晚低壓', data: eveDiaData, borderColor: '#1A595A',
+            borderDash: [6, 6], backgroundColor: 'transparent', borderWidth: 3,
+            pointRadius: 5, pointBackgroundColor: '#fff', pointBorderColor: '#1A595A',
+            pointBorderWidth: 2, tension: 0.3
           }
         ]
       },
       options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'top', labels: { padding: 15, usePointStyle: true } }
-        },
-        scales: {
-          y: {
-            min: 50, max: 200,
-            ticks: { stepSize: 30 }
-          },
-          x: {
-            grid: { display: false }
-          }
-        }
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'top', labels: { padding: 15, usePointStyle: true } } },
+        scales: { y: { min: 50, max: 200, ticks: { stepSize: 30 } }, x: { grid: { display: false } } }
       }
     });
   }
 
   function renderTable() {
+    const displayData = getFilteredData();
     const tbody = document.getElementById('dataTableBody');
     tbody.innerHTML = '';
     
-    // 反轉陣列，讓最新日期排在表格最上方
-    const reversedData = [...historyData].reverse();
+    // 讓最新日期排在表格最上方
+    const reversedData = [...displayData].reverse();
+
+    if(reversedData.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="padding: 20px; color: var(--ink-soft);">目前還沒有紀錄，快去填寫今天的第一筆資料吧！</td></tr>';
+      return;
+    }
 
     reversedData.forEach(row => {
       const tr = document.createElement('tr');
@@ -638,14 +686,13 @@
       const tdDate = document.createElement('td');
       tdDate.textContent = row.date;
       
-      // 早上血壓 (超過 130 變紅)
       const tdMorn = document.createElement('td');
       const mornSysColor = row.sys > 130 ? '#D14931' : 'inherit';
       const mornSysWeight = row.sys > 130 ? 'bold' : 'normal';
       tdMorn.innerHTML = `<span style="color:${mornSysColor}; font-weight:${mornSysWeight}">${row.sys}</span> / ${row.dia}`;
 
-      // 晚上血壓 (超過 130 變紅)
       const tdEve = document.createElement('td');
+      // 處理如果長輩只量早上沒量晚上的防呆(假設沒量的話數值會跟早上一樣或為0，這邊直接呈現數值)
       const eveSysColor = row.eveSys > 130 ? '#D14931' : 'inherit';
       const eveSysWeight = row.eveSys > 130 ? 'bold' : 'normal';
       tdEve.innerHTML = `<span style="color:${eveSysColor}; font-weight:${eveSysWeight}">${row.eveSys}</span> / ${row.eveDia}`;
@@ -661,61 +708,51 @@
     });
   }
 
-  function showModal() {
-    document.getElementById('successModal').classList.add('show');
-  }
-
-  function closeModal() {
-    document.getElementById('successModal').classList.remove('show');
-    switchTab('chart'); // 關閉提示後自動跳轉到圖表頁看成果
-  }
-
-  function submitRecord() {
+  window.submitRecord = async function() {
     const btn = document.querySelector('.submit-btn');
-    btn.textContent = "⏳ 紀錄中...";
+    btn.textContent = "⏳ 雲端儲存中...";
     btn.disabled = true;
 
-    // 取得今日紀錄
     const newRecord = {
-      date: getTodayString(),
-      sys: state.morningSys,
-      dia: state.morningDia,
-      eveSys: state.eveningSys,
-      eveDia: state.eveningDia,
-      med: state.morningMed,
+      dateId: getTodayId(), // 用 YYYY-MM-DD 當 ID 排序
+      date: getTodayString(), // 顯示用的 MM/DD
+      sys: window.state.morningSys,
+      dia: window.state.morningDia,
+      eveSys: window.state.eveningSys,
+      eveDia: window.state.eveningDia,
+      med: window.state.morningMed,
       note: document.getElementById('note').value.trim()
     };
 
-    // 檢查今天是否已經紀錄過，有則覆蓋，無則新增
-    const existingIndex = historyData.findIndex(d => d.date === newRecord.date);
-    if(existingIndex >= 0) {
-      historyData[existingIndex] = newRecord;
+    if (userId && db) {
+      try {
+        // 使用當天日期作為文件 ID，如果同一天重複送出會自動覆蓋更新
+        const docRef = doc(db, 'artifacts', appId, 'users', userId, 'health_records', newRecord.dateId);
+        await setDoc(docRef, newRecord);
+        window.showModal();
+      } catch(error) {
+        console.error("儲存失敗:", error);
+        alert("儲存失敗，請確認網路連線");
+      }
     } else {
-      historyData.push(newRecord);
-      // 保持最多顯示 7 天數據，避免圖表太擠
-      if (historyData.length > 7) historyData.shift(); 
+      // 若無雲端環境，維持本地測試運作
+      const existingIndex = allHistoryData.findIndex(d => d.dateId === newRecord.dateId);
+      if(existingIndex >= 0) allHistoryData[existingIndex] = newRecord;
+      else allHistoryData.push(newRecord);
+      
+      allHistoryData.sort((a, b) => a.dateId.localeCompare(b.dateId));
+      window.showModal();
     }
 
-    // 模擬網路延遲
-    setTimeout(() => {
-      showModal();
-      btn.textContent = "📤 送出今天的紀錄";
-      btn.disabled = false;
-    }, 600);
-  }
-
-  // 初始化時先渲染一次圖表（為了列印預備）
-  window.onload = () => {
-    renderChart();
-    renderTable();
+    btn.textContent = "📤 送出今天的紀錄";
+    btn.disabled = false;
   };
 
-  /* 
-   溫馨提示：
-   目前的數據是儲存在「網頁記憶體」中，重新整理網頁會恢復預設的模擬資料，
-   這是為了讓您方便測試與觀看圖表效果。
-   若未來需要「永久保存數據」，我們可以為您加入雲端儲存 (Cloud Storage) 功能！
-  */
+  // 初始化程式
+  window.onload = () => {
+    window.setTodayDate();
+    initApp();
+  };
 </script>
 </body>
 </html>
